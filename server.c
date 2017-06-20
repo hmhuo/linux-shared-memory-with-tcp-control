@@ -1,90 +1,146 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <ctype.h>
+#include <sys/types.h>
 #include <sys/socket.h>
-#include <arpa/inet.h>
+#include <pthread.h>
+#include <netinet/in.h>
+#include <stdio.h>
 #include <string.h>
- 
-#define INET_ADDR_STR_LEN   1024
-#define MAX_LINE 100
- 
-int main(int argc,char **argv)
+#include <unistd.h>
+#include <stdlib.h>
+#include <sys/ipc.h>     
+#include <sys/shm.h>     
+
+#define BUF_SIZE 1024     
+#define MYKEY 25     
+
+
+#define TEXT_SZ 2048
+
+struct shared_use_st {
+    int speed;
+    int dir;
+    char some_text[TEXT_SZ];
+};  
+
+
+
+
+
+int main(int argc, char **argv)
 {
-    struct sockaddr_in sin;
-    struct sockaddr_in cin;
-    int l_fd;
-    int c_fd;
-    socklen_t len;
-    char buf[MAX_LINE];
-    char addr_p[INET_ADDR_STR_LEN];
-    int port = 8000;
+
+
+
+
+
+    int shmid;    
+    
+    void *shared_memory = (void *)0;
+    struct shared_use_st *shared_stuff;
+
+    if((shmid = shmget(MYKEY,sizeof(shared_stuff),IPC_CREAT)) ==-1)    
+    {    
+    printf("shmget error!\n");    
+    exit(1);    
+    }    
+    
+    if((shared_stuff = shmat(shmid,0,0)) == (void *)-1)    
+    {    
+    printf("shmat error!\n");    
+    exit(1);    
+    }    
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    printf("Welcome! This is a UDP server, I can only received message from client and reply with same message\n");
+    char* port = "8000";
+    struct sockaddr_in addr;
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(atoi(port));
+    addr.sin_addr.s_addr = htonl(INADDR_ANY);
+
+
+    int sock;
+    if ( (sock = socket(AF_INET, SOCK_DGRAM, 0)) < 0)
+    {
+        perror("socket");
+        exit(1);
+    }
+    if (bind(sock, (struct sockaddr *)&addr, sizeof(addr)) < 0)
+    {
+        perror("bind");
+        exit(1);
+    }
+    char buff[512];
+    struct sockaddr_in clientAddr;
     int n;
-    bzero(&sin , sizeof(sin));
-     
-    sin.sin_family = AF_INET;
-    sin.sin_addr.s_addr = INADDR_ANY;
-    sin.sin_port = htons(port);
-     
-    if((l_fd = socket(AF_INET,SOCK_STREAM,0)) == -1)
+    int len = sizeof(clientAddr);
+    int i4speed;
+    int i4dir;
+
+
+    char *u1conf; 
+    char *u1dir;  
+    char *u1speed;
+
+
+    u1conf  =   (char*)malloc(sizeof(char) *4);
+    u1dir   =   (char*)malloc(sizeof(char) *6);
+    u1speed =   (char*)malloc(sizeof(char) *5);
+
+    while (1)
     {
-        perror("fail to create socket");
-        exit(1);
-    }
-    if(bind(l_fd,(struct sockaddr *)&sin ,sizeof(sin) ) == -1) 
-    {
-        perror("fail to bind");
-        exit(1);
-    }
-     
-    if(listen(l_fd,10) == -1)
-    {
-        perror("fail to listen");
-        exit(1);
-    }
-    printf("waiting.....\n");
-    while(1)
-    {
-        if((c_fd = accept(l_fd,(struct sockaddr *)&cin, &len)) == -1)
+        n = recvfrom(sock, buff, 511, 0, (struct sockaddr*)&clientAddr, &len);
+        if (n>0)
         {
-            perror("fail to accept");
-            exit(1);
+            buff[n] = 0;
+            printf("%s %u says: %s\n", inet_ntoa(clientAddr.sin_addr), ntohs(clientAddr.sin_port), buff);
+
+
+            
+            memcpy(u1conf,buff,3);
+            u1conf[3] =0;
+
+            memcpy(u1dir,buff+3,5);
+            u1dir[5] =0;
+
+            memcpy(u1speed,buff+8,4);
+            u1speed[5] =0;
+
+
+            printf("u1conf:%s\n",u1conf);
+            printf("u1dir:%s\n",u1dir);
+            printf("u1speed:%s\n",u1speed);
+            i4dir   = atoi(u1dir);
+            i4speed = atoi(u1speed);
+
+            printf("i4dir:%d,i4speed:%d\n",i4dir,i4speed);
+
+
+
+            shared_stuff->speed=i4speed;
+            shared_stuff->dir=i4dir;
+            memcpy(shared_stuff->some_text,u1conf,4);
+
+
+
+
         }
-         
-        n = recv(c_fd , buf, MAX_LINE, 0);
-        if(n == -1)
+        else
         {
-            perror("fail to recv");
-            exit(1);
+            perror("recv");
+            break;
         }
-        else if(n == 0)
-        {
-            printf("the connect has been closed\n");
-            close(c_fd);
-            continue;
-        }
-        inet_ntop(AF_INET,&cin.sin_addr,addr_p,sizeof(addr_p));
-        printf("content is : %s\n",buf);
-         
-        n = strlen(buf);
-        sprintf(buf,"%d",n);
-         
-        n = send(c_fd , buf, sizeof(buf) + 1 , 0);
-        if( n == -1)
-        {
-            perror("fail to send");
-            exit(1);
-        }
-        if(close(c_fd) == -1)
-        {
-            perror("fail to close");
-            exit(1);
-        }
-    }
-    if(close(l_fd) == -1)
-    {
-        perror("fail to close");
-        exit(1);
     }
     return 0;
 }
